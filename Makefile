@@ -1,55 +1,82 @@
+#
+# Copyright (C) 2008-2014 The LuCI Team <luci@lists.subsignal.org>
+#
+# This is free software, licensed under the Apache License, Version 2.0 .
+#
+
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=luci-app-modbusTcp
-PKG_VERSION:=1.0
+PKG_VERSION:=2.3.1
 PKG_RELEASE:=1
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
+LUCI_TITLE:=LuCI support for EasyTier
+LUCI_DEPENDS:=+kmod-tun +luci-compat
+LUCI_PKGARCH:=all
 
-include $(INCLUDE_DIR)/package.mk
+PKG_NAME:=luci-app-easytier
 
-define Package/luci-app-modbusTcp
-  SECTION:=luci
-  CATEGORY:=LuCI
-  SUBMENU:=3. Applications
-  TITLE:=Modbus TCP Bridge (西南交通大学PLC协议)
-  PKGARCH:=all
-  DEPENDS:=+lua +luci-lib-nixio +libmosquitto-nossl +mosquitto-client-nossl
+define Package/$(PKG_NAME)/conffiles
+/etc/easytier/
 endef
 
-define Package/luci-app-modbusTcp/description
-  LuCI application for Modbus TCP communication with Southwest Jiaotong University PLC devices
+define Package/$(PKG_NAME)/prerm
+#!/bin/sh
+if [ -f /etc/config/easytier ] ; then
+  echo "备份easytier配置文件/etc/config/easytier到/tmp/easytier_backup"
+  echo "不重启设备之前再次安装luci-app-easytier 配置不丢失,不用重新配置"
+  cp -rf /etc/config/easytier /tmp/easytier_backup
+fi
+
+if [ -f /etc/easytier/config.toml ] ; then
+  echo "备份easytier配置文件/etc/easytier/config.toml到/tmp/et_config_backup.toml"
+  echo "不重启设备之前再次安装luci-app-easytier 配置不丢失,不用重新配置"
+  cp -rf /etc/easytier/config.toml /tmp/et_config_backup.toml
+fi
+
+DB_PATH=$(uci -q get easytier.@easytierweb[0].db_path)
+if [ -n "$DB_PATH" ] && [ -f "$DB_PATH" ]; then
+    echo "数据库 $DB_PATH 已备份到 /tmp/et_backup.db"
+    cp -rf "$DB_PATH" /tmp/et_backup.db
+else
+    echo "未找到数据库文件，跳过备份！"
+fi
+
+if [ -f /etc/easytier/et_machine_id ] ; then
+  echo "备份easytier UUID /etc/easytier/et_machine_id到/tmp/et_machine_id_backup"
+  echo "不重启设备之前再次安装luci-app-easytier UUID不丢失,不用重新配置"
+  cp -rf /etc/easytier/et_machine_id /tmp/et_machine_id_backup
+fi
 endef
 
-define Build/Prepare
-	mkdir -p $(PKG_BUILD_DIR)
-	cp -r ./luasrc $(PKG_BUILD_DIR)/
-	cp -r ./htdocs $(PKG_BUILD_DIR)/
-	cp -r ./files $(PKG_BUILD_DIR)/
-	cp Makefile $(PKG_BUILD_DIR)/
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+chmod +x /etc/init.d/easytier
+if [ -f /tmp/easytier_backup ] ; then
+  echo "发现easytier备份配置文件/tmp/easytier_backup，开始恢复到/etc/config/easytier"
+  mv -f /tmp/easytier_backup /etc/config/easytier
+  echo "请前往 VPN - EasyTier 界面进行重启插件"
+fi
+if [ -f /tmp/et_config_backup.toml ] ; then
+  echo "发现easytier备份配置文件/tmp/et_config_backup.toml，开始恢复到/etc/easytier/config.toml"
+  mv -f /tmp/et_config_backup.toml /etc/easytier/config.toml
+  echo "请前往 VPN - EasyTier 界面进行重启插件"
+fi
+if [ -f /tmp/et_backup.db ] ; then
+  echo "发现easytier备份数据库/tmp/et_backup.db，开始恢复到/etc/easytier/et.db"
+  echo "警告：如果卸载之前修改过easytier数据库路径，请手动将/etc/easytier/et.db复制到修改过的数据库文件路径位置，如不想修改请将数据库路径还原为/etc/easytier/et.db"
+  mv -f /tmp/et_backup.db /etc/easytier/et.db
+  echo "请前往 VPN - EasyTier 界面进行重启插件"
+fi
+if [ -f /tmp/et_machine_id_backup ] ; then
+  echo "发现easytier备份UUID /tmp/et_machine_id_backup，开始恢复到/etc/easytier/et.db"
+  mv -f /tmp/et_machine_id_backup /etc/easytier/et_machine_id
+  echo "请前往 VPN - EasyTier 界面进行重启插件"
+fi
 endef
 
-define Build/Configure
-endef
+$(eval $(call Build/Template,Package/$(PKG_NAME)/prerm))
+$(eval $(call Build/Template,Package/$(PKG_NAME)/postinst))
 
-define Build/Compile
-endef
+include $(TOPDIR)/feeds/luci/luci.mk
 
-define Package/luci-app-modbusTcp/install
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci
-	cp -pR $(PKG_BUILD_DIR)/luasrc/* $(1)/usr/lib/lua/luci/
-	
-	$(INSTALL_DIR) $(1)/www/luci-static/resources
-	cp -pR $(PKG_BUILD_DIR)/htdocs/* $(1)/www/luci-static/resources/
-	
-	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/config/modbusTcp $(1)/etc/config/modbusTcp
-	
-	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/files/etc/init.d/modbus_bridge $(1)/etc/init.d/modbus_bridge
-	
-	$(INSTALL_DIR) $(1)/usr/sbin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/files/usr/sbin/modbus_bridge $(1)/usr/sbin/modbus_bridge
-endef
-
-$(eval $(call BuildPackage,luci-app-modbusTcp))
+# call BuildPackage - OpenWrt buildroot signature
