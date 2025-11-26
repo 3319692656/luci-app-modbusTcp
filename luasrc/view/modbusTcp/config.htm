@@ -1,0 +1,42 @@
+<%+header%>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Modbus TCP Bridge Configuration%></h2>
+    <div class="cbi-map-descr">
+        <%:Configure MQTT server settings for Southwest Jiaotong University PLC protocol.%>
+    </div>
+    
+    <fieldset class="cbi-section">
+        <legend><%:Service Status%></legend>
+        <div class="cbi-value">
+            <label class="cbi-value-title"><%:Service Status%></label>
+            <div class="cbi-value-field">
+                <span id="service-status" class="label">Checking...</span>
+            </div>
+        </div>
+    </fieldset>
+    
+    <%+cbi/map%>
+    
+    <div class="cbi-page-actions">
+        <input type="submit" class="cbi-button cbi-button-apply" value="<%:Save & Apply%>" />
+        <input type="reset" class="cbi-button cbi-button-reset" value="<%:Reset%>" />
+    </div>
+</div>
+
+<script type="text/javascript">
+    function updateServiceStatus() {
+        fetch('<%=url("admin/services/modbusTcp/status")%>')
+            .then(response => response.json())
+            .then(data => {
+                const statusEl = document.getElementById('service-status');
+                statusEl.textContent = data.service_running ? 'Running' : 'Stopped';
+                statusEl.className = 'label ' + (data.service_running ? 'success' : 'error');
+            });
+    }
+    
+    updateServiceStatus();
+    setInterval(updateServiceStatus, 5000);
+</script>
+
+<%+footer%>

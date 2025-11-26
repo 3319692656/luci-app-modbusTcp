@@ -1,0 +1,127 @@
+#!/bin/sh
+
+CONFIG_FILE="/etc/config/modbusTcp"
+LOG_TAG="modbus_bridge"
+
+log() {
+    logger -t "$LOG_TAG" "$@"
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): $@" >> /tmp/modbus_bridge.log
+}
+
+get_config() {
+    uci -q get "${CONFIG_FILE}.${1}.${2}" 2>/dev/null
+}
+
+is_service_enabled() {
+    [ "$(get_config global enabled)" = "1" ] && return 0 || return 1
+}
+
+process_all_devices() {
+    local mqtt_host=$(get_config mqtt host)
+    local mqtt_port=$(get_config mqtt port)
+    local mqtt_user=$(get_config mqtt username)
+    local mqtt_pass=$(get_config mqtt password)
+    local mqtt_topic=$(get_config mqtt topic_prefix)
+    
+    [ -z "$mqtt_host" ] && {
+        log "MQTT host not configured"
+        return 1
+    }
+    
+    config_load modbusTcp
+    config_foreach process_single_device device "$mqtt_host" "$mqtt_port" "$mqtt_user" "$mqtt_pass" "$mqtt_topic"
+}
+
+process_single_device() {
+    local device_name="$1"
+    local mqtt_host="$2" mqtt_port="$3" mqtt_user="$4" mqtt_pass="$5" mqtt_topic="$6"
+    
+    local device_host=$(get_config "$device_name" host)
+    local device_port=$(get_config "$device_name" port)
+    local slave_id=$(get_config "$device_name" slave_id)
+    local func_code=$(get_config "$device_name" function_code)
+    local start_addr=$(get_config "$device_name" start_addr)
+    local count=$(get_config "$device_name" count)
+    
+    [ -z "$device_host" ] && {
+        log "Device $device_name: no host configured"
+        return 1
+    }
+    
+    log "Processing device $device_name: $device_host:$device_port (slave:$slave_id, func:$func_code)"
+    
+    lua -e "
+    local bridge = require('luci.model.modbus_bridge')
+    local device_config = {
+        name = '$device_name',
+        host = '$device_host',
+        port = '$device_port',
+        slave_id = '$slave_id',
+        function_code = '$func_code',
+        start_addr = '$start_addr',
+        count = '$count'
+    }
+    local mqtt_config = {
+        host = '$mqtt_host',
+        port = '$mqtt_port',
+        username = '$mqtt_user',
+        password = '$mqtt_pass',
+        topic_prefix = '$mqtt_topic'
+    }
+    local result = bridge.process_device(device_config, mqtt_config)
+    if result.success then
+        print('Success: ' .. (result.message or 'OK'))
+    else
+        print('Error: ' .. (result.message or 'Unknown error'))
+    end
+    " 2>&1 | while read line; do
+        log "$device_name: $line"
+    done
+}
+main_loop() {
+    log "Modbus TCP Bridge started (Southwest Jiaotong University PLC Protocol)"
+    
+    while true; do
+        if is_service_enabled; then
+            process_all_devices
+            date +%s > /tmp/modbus_last_update
+        else
+            sleep 30
+            continue
+        fi
+        
+        local poll_interval=$(get_config global poll_interval)
+        sleep "${poll_interval:-10}"
+    done
+}
+
+case "$1" in
+    start)
+        log "Starting Modbus TCP Bridge service"
+        main_loop &
+        echo $! > /var/run/modbus_bridge.pid
+        ;;
+    stop)
+        log "Stopping Modbus TCP Bridge service"
+        [ -f /var/run/modbus_bridge.pid ] && {
+            kill $(cat /var/run/modbus_bridge.pid) 2>/dev/null
+            rm -f /var/run/modbus_bridge.pid
+        }
+        ;;
+    restart)
+        $0 stop
+        sleep 2
+        $0 start
+        ;;
+    status)
+        if [ -f /var/run/modbus_bridge.pid ]; then
+            echo "Service is running (PID: $(cat /var/run/modbus_bridge.pid))"
+        else
+            echo "Service is not running"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

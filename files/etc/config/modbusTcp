@@ -1,0 +1,19 @@
+config global 'global'
+    option enabled '0'
+    option poll_interval '10'
+
+config mqtt 'mqtt'
+    option host 'mqtt.example.com'
+    option port '1883'
+    option topic_prefix 'swjtu/plc/data'
+
+# Example device configuration
+# config device 'plc1'
+#    option name 'PLC_Controller_1'
+#    option host '192.168.1.100'
+#    option port '502'
+#    option slave_id '1'
+#    option function_code '3'
+#    option start_addr '0'
+#    option count '10'
+#    option poll_interval '10'

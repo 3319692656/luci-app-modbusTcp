@@ -1,0 +1,54 @@
+<%+header%>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Modbus TCP Devices%></h2>
+    <div class="cbi-map-descr">
+        <%:Configure Modbus TCP devices using Southwest Jiaotong University protocol.%>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Connection Test%></h3>
+        <div class="cbi-value">
+            <label class="cbi-value-title"><%:Test Connection%></label>
+            <div class="cbi-value-field">
+                <input type="text" id="test-host" placeholder="Host" value="192.168.1.100" />
+                <input type="text" id="test-port" placeholder="Port" value="502" style="width: 80px;" />
+                <button class="cbi-button" onclick="testConnection()"><%:Test%></button>
+                <span id="test-result"></span>
+            </div>
+        </div>
+    </div>
+    
+    <%+cbi/ucisection%>
+    <%+cbi/map%>
+</div>
+
+<script type="text/javascript">
+    function testConnection() {
+        const host = document.getElementById('test-host').value;
+        const port = document.getElementById('test-port').value;
+        const resultEl = document.getElementById('test-result');
+        
+        resultEl.textContent = 'Testing...';
+        resultEl.className = '';
+        
+        fetch('<%=url("admin/services/modbusTcp/test")%>', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'host=' + encodeURIComponent(host) + '&port=' + encodeURIComponent(port)
+        })
+        .then(response => response.json())
+        .then(data => {
+            resultEl.textContent = data.message;
+            resultEl.className = data.success ? 'success' : 'error';
+        })
+        .catch(error => {
+            resultEl.textContent = 'Test failed: ' + error;
+            resultEl.className = 'error';
+        });
+    }
+</script>
+
+<%+footer%>
